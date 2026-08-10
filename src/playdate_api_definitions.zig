@@ -88,7 +88,13 @@ pub const PDDateTime = extern struct {
 pub const PDInfo = extern struct {
     osversion: u32,
     language: PDLanguage,
+    pdxversion: u32,
 };
+
+pub const PDPowerStatus = c_int;
+const POWER_STATUS_CHARGING = (1 << 0);
+const POWER_STATUS_USB = (1 << 1);
+const POWER_STATUS_SCREWS = (1 << 2);
 
 pub const PlaydateSys = extern struct {
     realloc: *const fn (ptr: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque,
@@ -175,6 +181,12 @@ pub const PlaydateSys = extern struct {
 
     // 3.0
     getSystemInfo: *const fn () callconv(.c) *const PDInfo,
+
+    // 3.1
+    getLocalizedText: *const fn (key: [*c]const u8, language: PDLanguage) callconv(.c) [*c]u8,
+    getVolume: *const fn () callconv(.c) f32,
+    getPowerStatus: *const fn () callconv(.c) PDPowerStatus,
+    exitToLauncher: *const fn () callconv(.c) void,
 
     //NOTE(Daniel Bokser): std.builtin.VaList is not available when targeting Windows,
     //      so we need to directly include it
@@ -397,7 +409,7 @@ pub const PlaydateGraphics = extern struct {
     setStencilImage: *const fn (stencil: ?*LCDBitmap, tile: c_int) callconv(.c) void,
 
     // 1.12
-    makeFontFromData: *const fn (data: ?*LCDFontData, wide: c_int) callconv(.c) *LCDFont,
+    makeFontFromData_deprecated: *const fn (data: ?*LCDFontData, wide: c_int) callconv(.c) *LCDFont,
 
     // 2.1
     getTextTracking: *const fn () callconv(.c) c_int,
@@ -418,6 +430,10 @@ pub const PlaydateGraphics = extern struct {
     // 3.0
     tilemap: *const PlaydateTilemap,
     videostream: *const PlaydateVideostream,
+
+    // 3.1
+    getFontGlyph: *const fn (font: ?*LCDFont, c: u32, bitmap: ?*?*LCDBitmap, advance: ?*c_int) callconv(.c) ?*LCDFontGlyph,
+    makeFontFromData: *const fn (data: ?*LCDFontData, wide: c_int, datalength: c_int) callconv(.c) ?*LCDFont,
 };
 pub const PlaydateDisplay = struct {
     getWidth: *const fn () callconv(.c) c_int,
@@ -528,6 +544,9 @@ pub const PlaydateSound = extern struct {
 
     // 2.2
     getError: *const fn () callconv(.c) ?[*:0]const u8,
+
+    // 3.1
+    requestMicAccess: *const fn (purpose: ?[*:0]const u8, requestCallback: AccessRequestCallback, userdata: ?*anyopaque) callconv(.c) AccessReply,
 };
 
 //data is mono
@@ -604,6 +623,10 @@ pub const PlaydateSoundFileplayer = extern struct {
         userdata: ?*anyopaque,
         bufferLen: f32,
     ) callconv(.c) void,
+
+    // 3.1
+    setRateModulator: *const fn (player: ?*FilePlayer, mod: ?*PDSynthSignalValue) callconv(.c) void,
+    getRateModulator: *const fn (player: ?*FilePlayer) callconv(.c) ?*PDSynthSignalValue,
 };
 
 pub const AudioSample = opaque {};
@@ -674,6 +697,10 @@ pub const PlaydateSoundSampleplayer = extern struct {
     getOffset: *const fn (player: ?*SamplePlayer) callconv(.c) f32,
     getRate: *const fn (player: ?*SamplePlayer) callconv(.c) f32,
     setPaused: *const fn (player: ?*SamplePlayer, flag: c_int) callconv(.c) void,
+
+    // 3.1
+    setRateModulator: *const fn (player: ?*SamplePlayer, mod: ?*PDSynthSignalValue) callconv(.c) void,
+    getRateModulator: *const fn (player: ?*SamplePlayer) callconv(.c) ?*PDSynthSignalValue,
 };
 
 pub const PDSynth = SoundSource;
@@ -873,6 +900,12 @@ pub const PlaydateSoundLFO = extern struct {
 
     // 1.10
     setGlobal: *const fn (lfo: ?*PDSynthLFO, global: c_int) callconv(.c) void,
+
+    // 2.2
+    setStartPhase: *const fn (lfo: ?*PDSynthLFO, phase: f32) callconv(.c) void,
+
+    // 3.1
+    setRandomSeed: *const fn (lfo: ?*PDSynthLFO, value: u16) callconv(.c) void,
 };
 
 pub const PDSynthEnvelope = opaque {};
@@ -1024,6 +1057,15 @@ pub const PlaydateSoundEffectBitcrusher = extern struct {
     setUndersampling: *const fn (filter: ?*BitCrusher, undersampling: f32) callconv(.c) void,
     setUndersampleModulator: *const fn (filter: ?*BitCrusher, signal: ?*PDSynthSignalValue) callconv(.c) void,
     getUndersampleModulator: *const fn (filter: ?*BitCrusher) callconv(.c) ?*PDSynthSignalValue,
+
+    // 3.1
+    setExponential: *const fn (filter: ?*BitCrusher, flag: bool) callconv(.c) void,
+    setDepth: *const fn (filter: ?*BitCrusher, amount: f32) callconv(.c) void,
+    setDepthModulator: *const fn (filter: ?*BitCrusher, signal: ?*PDSynthSignalValue) callconv(.c) void,
+    getDepthModulator: *const fn (filter: ?*BitCrusher) callconv(.c) ?*PDSynthSignalValue,
+    setDownsampling: *const fn (filter: ?*BitCrusher, undersampling: f32) callconv(.c) void,
+    setDownsamplingModulator: *const fn (filter: ?*BitCrusher, signal: ?*PDSynthSignalValue) callconv(.c) void,
+    getDownsamplingModulator: *const fn (filter: ?*BitCrusher) callconv(.c) ?*PDSynthSignalValue,
 };
 
 pub const RingModulator = SoundEffect;
@@ -1218,6 +1260,9 @@ pub const PlaydateSprite = extern struct {
     // 2.7
     setTilemap: *const fn (s: ?*LCDSprite, tilemap: ?*LCDTileMap) callconv(.c) void,
     getTilemap: *const fn (s: ?*LCDSprite) callconv(.c) ?*LCDTileMap,
+
+    // 3.1
+    markDirtyRect: *const fn (s: ?*LCDSprite, rect: PDRect) callconv(.c) void,
 };
 
 ////////Lua///////
@@ -1565,6 +1610,9 @@ pub const PlaydateTCP = extern struct {
 
     read: *const fn (connection: ?*TCPConnection, buffer: [*c]u8, length: usize) callconv(.c) c_int, // returns # of bytes read, or PDNetErr on error
     write: *const fn (connection: ?*TCPConnection, buffer: [*c]const u8, length: usize) callconv(.c) c_int, // returns # of bytes read, or PDNetErr on error
+
+    // 3.1
+    getSentBytesPending: *const fn (connection: ?*TCPConnection) callconv(.c) usize,
 };
 
 pub const PlaydateNetwork = extern struct {
